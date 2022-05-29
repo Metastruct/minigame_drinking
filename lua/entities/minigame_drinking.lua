@@ -80,7 +80,7 @@ ENT.REWARD_TABLE = {
 
 if SERVER then
 	util.AddNetworkString("__minigame_drinking_snd")
-	util.AddNetworkString("__minigame_drinking_cmd")
+	util.AddNetworkString(Tag)
 	util.PrecacheModel("models/props_junk/glassjug01.mdl")
 end
 
@@ -153,20 +153,37 @@ function ENT:AddHooks()
 	local EntTag = Tag..'_' .. self:EntIndex()
 	if SERVER then
 		hook.Add("PlayerDisconnected", EntTag, function(ply)
+			if not IsValid(self) then return end
 			if not self.__started then return end
 			if not self:IsPlyPlaying(ply) or #self:GetPlaying() > 2 then return end
-			self:EndMinigame()
+			self:EndMinigame(ply)
 		end)
-		hook.Add("PlayerDeath", EntTag, function( ply, inflictor, attacker) 
+		
+		
+		hook.Add("PlayerReserved",EntTag,function(ply,tag,prev)
+			--TODO: you can't really leave this game except only end it altogether
+			--TODO: test 2 and 2+ players
+			
+			if prev~=Tag then return end -- only interested when someone leaves
+			if not IsValid(self) then return end
 			if not self.__started then return end
 			if not self:IsPlyPlaying(ply) or #self:GetPlaying() > 2 then return end
-			if ply~=attacker then
+			
+			self:EndMinigame(ply)
+		end)
+		
+		hook.Add("PlayerDeath", EntTag, function( ply, inflictor, attacker) 
+			if not IsValid(self) then return end
+			if not self.__started then return end
+			if not self:IsPlyPlaying(ply) or #self:GetPlaying() > 2 then return end
+			if ply==attacker then
+				self:EndMinigame(ply) -- UNDONE: winner could force instant victory
+			else
 				timer.Simple(0.5,function()
 					ply:Revive()
 				end)
-				return
-			end -- only suicide matters
-			self:EndMinigame()
+			end
+			
 		end)
 	else
 		local view = {}
@@ -209,6 +226,7 @@ function ENT:RemoveHooks()
 		hook.Remove("PrePlayerDraw", EntTag)
 	else
 		hook.Remove("PlayerDeath", EntTag)
+		hook.Remove("PlayerReserved", EntTag)
 		hook.Remove("PlayerDisconnected", EntTag)
 	end
 
@@ -276,7 +294,7 @@ function ENT:PreparePlayer(id, restrict)
 	ply:StripWeapons()
 
 	if restrict then
-		ply:RestrictGuns({"cake_drinking_swep"}, "drinking_minigame", true)
+		ply:RestrictGuns({"cake_drinking_swep"}, Tag, true)
 
 		ply:Give("cake_drinking_swep")
 
@@ -319,11 +337,11 @@ end
 function ENT:SetWeaponStatus(ply, isWater)
 	if CLIENT then return end
 	if not IsValid(ply) then return end
-	net.Start("__minigame_drinking_cmd")
-	net.WriteEntity(self)
-	net.WriteString("SET_WEAPON_STATUS")
-	net.WriteEntity(ply)
-	net.WriteBool(isWater)
+	net.Start(Tag)
+		net.WriteEntity(self)
+		net.WriteString("SET_WEAPON_STATUS")
+		net.WriteEntity(ply)
+		net.WriteBool(isWater)
 	net.Broadcast()
 end
 
@@ -331,7 +349,7 @@ function ENT:DoAnimation(ply, anim)
 	if not IsValid(ply) or not ply:IsPlayer() then return end
 
 	if SERVER then
-		net.Start("__minigame_drinking_cmd")
+		net.Start(Tag)
 		net.WriteEntity(self)
 		net.WriteString("PLY_ANIMATION")
 		net.WriteEntity(ply)
@@ -433,7 +451,7 @@ end
 function ENT:StartMinigame()
 	if CLIENT then return end
 	if self.__started then return end
-	net.Start("__minigame_drinking_cmd")
+	net.Start(Tag)
 	net.WriteEntity(self)
 	net.WriteString("MINIGAME_STARTED")
 	net.WriteTable(self:GetPlaying()) -- Send players
@@ -467,8 +485,11 @@ function ENT:BroadcastWinner(name)
 	end
 end
 
-function ENT:EndMinigame()
+function ENT:EndMinigame(no_winner)
 	local winner = self:CheckWinners()
+	if no_winner then
+		winner = nil
+	end
 
 	if winner == nil or not IsValid(winner) then
 		self:PrintMessage("No one won!")
@@ -483,14 +504,14 @@ function ENT:EndMinigame()
 	for _, v in pairs(self:GetPlaying()) do
 		if not IsValid(v) then continue end
 		v:SetDrunkFactor(20)
-
+		v:UnReserve(Tag)
 		timer.Simple(6, function()
 			v:SetDrunkFactor(0)
 		end)
 	end
 
 	self:StopAll() -- Server side only
-	net.Start("__minigame_drinking_cmd")
+	net.Start(Tag)
 	net.WriteEntity(self)
 	net.WriteString("MINIGAME_END")
 	net.Broadcast()
@@ -564,7 +585,7 @@ function ENT:StopAll()
 end
 
 if CLIENT then
-	net.Receive("__minigame_drinking_cmd", function()
+	net.Receive(Tag, function()
 		local entity = net.ReadEntity()
 		if not IsValid(entity) then return end
 		local cmd = net.ReadString()
@@ -817,7 +838,7 @@ if CLIENT then
 	end
 end
 
-easylua.EndEntity()
+--easylua.EndEntity()
 
 
 
@@ -828,7 +849,7 @@ if SERVER and false then
 		CAW_DRINK_game:Remove()
 	end
 
-	CAW_DRINK_game = create("drinking_minigame")
+	CAW_DRINK_game = create(Tag)
 	CAW_DRINK_game:SetPos(me:GetPos() + Vector(0, 0, 18))
 	CAW_DRINK_game:Spawn()
 end
