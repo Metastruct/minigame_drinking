@@ -1,5 +1,5 @@
 local Tag = "drinking_minigame"
-local DRINKURL="https://xss.failcake.me/minigames/drink/"
+local DRINKURL="https://metastruct.github.io/minigame_drinking/assets/"
 
 ENT.PrintName = "Drinking game"
 ENT.Author = "FailCake"
@@ -163,7 +163,6 @@ function ENT:AddHooks()
 			if ply~=attacker then
 				timer.Simple(0.5,function()
 					ply:Revive()
-					self: PreparePlayer
 				end)
 				return
 			end -- only suicide matters
