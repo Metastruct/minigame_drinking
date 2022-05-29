@@ -1,4 +1,4 @@
-local Tag = "drinking_minigame"
+local Tag = "minigame_drinking"
 local DRINKURL="https://metastruct.github.io/minigame_drinking/assets/"
 
 ENT.PrintName = "Drinking game"
