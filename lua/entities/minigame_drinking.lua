@@ -1,5 +1,6 @@
---weapon_mail_gun
-easylua.StartEntity("cake_drinking")
+local Tag = "drinking_minigame"
+local DRINKURL="https://xss.failcake.me/minigames/drink/"
+
 ENT.PrintName = "Drinking game"
 ENT.Author = "FailCake"
 ENT.RenderGroup = RENDERGROUP_TRANSLUCENT
@@ -83,6 +84,12 @@ if SERVER then
 	util.PrecacheModel("models/props_junk/glassjug01.mdl")
 end
 
+ENT.UrlTex_drink_icon = surface.LazyURLImage(DRINKURL.."drink.png")
+ENT.UrlTex_water_icon = surface.LazyURLImage(DRINKURL.."water.png")
+ENT.UrlTex_belch_icon = surface.LazyURLImage(DRINKURL.."belch.png")
+ENT.UrlTex_tbbg = surface.LazyURLImage(DRINKURL.."table_bg.png")
+ENT.UrlTex_icon = surface.LazyURLImage(DRINKURL.."icon.png")
+	
 function ENT:Initialize()
 	self.__players = {} -- Reset
 	self.__started = false
@@ -104,11 +111,7 @@ function ENT:Initialize()
 		self.bottle:SetColor(Color(255, 255, 255, 254))
 		self.bottle:SetPos(self:GetPos() + Vector(0, 0, 25))
 		self.bottle:SetParent(self)
-		self.UrlTex_drink_icon = surface.LazyURLImage("https://xss.failcake.me/minigames/drink/drink.png")
-		self.UrlTex_water_icon = surface.LazyURLImage("https://xss.failcake.me/minigames/drink/water.png")
-		self.UrlTex_belch_icon = surface.LazyURLImage("https://xss.failcake.me/minigames/drink/belch.png")
-		self.UrlTex_tbbg = surface.LazyURLImage("https://xss.failcake.me/minigames/drink/table_bg.png")
-		self.UrlTex_icon = surface.LazyURLImage("https://xss.failcake.me/minigames/drink/icon.png")
+
 		self.icons = {}
 
 		self.icons.drink = {1}
@@ -124,10 +127,12 @@ end
 
 function ENT:Think()
 	if SERVER then return end
-	if self.bottle == nil or not IsValid(self.bottle) then return end
+	
+	if not IsValid(self.bottle) then return end
 	self.bottle:SetAngles(Angle(math.cos(CurTime() * 2) * 20, 0, 0))
 
-	return self:NextThink(CurTime() + 0.01)
+	self:SetNextClientThink(CurTime())
+	return true
 end
 
 function ENT:OnRemove()
@@ -145,16 +150,29 @@ function ENT:IsPlyPlaying(ply)
 end
 
 function ENT:AddHooks()
+	local EntTag = Tag..'_' .. self:EntIndex()
 	if SERVER then
-		hook.Add("PlayerDisconnected", "__minigame_drink_" .. self:EntIndex(), function(ply)
+		hook.Add("PlayerDisconnected", EntTag, function(ply)
 			if not self.__started then return end
 			if not self:IsPlyPlaying(ply) or #self:GetPlaying() > 2 then return end
 			self:EndMinigame()
 		end)
+		hook.Add("PlayerDeath", EntTag, function( ply, inflictor, attacker) 
+			if not self.__started then return end
+			if not self:IsPlyPlaying(ply) or #self:GetPlaying() > 2 then return end
+			if ply~=attacker then
+				timer.Simple(0.5,function()
+					ply:Revive()
+					self: PreparePlayer
+				end)
+				return
+			end -- only suicide matters
+			self:EndMinigame()
+		end)
 	else
-		hook.Add("CalcView", "__minigame_drink_" .. self:EntIndex(), function(ply, pos, angles, fov)
+		local view = {}
+		hook.Add("CalcView", EntTag, function(ply, pos, angles, fov)
 			if not IsValid(ply) or not IsValid(self) then return end
-			local view = {}
 			view.origin = self:GetPos() + Vector(0, -60, 80)
 			view.angles = Angle(45, 90, 0)
 			view.fov = fov
@@ -162,20 +180,20 @@ function ENT:AddHooks()
 			return view
 		end)
 
-		hook.Add("ShouldDrawLocalPlayer", "__minigame_drink_" .. self:EntIndex(), function(ply)
+		hook.Add("ShouldDrawLocalPlayer", EntTag, function(ply)
 			if not IsValid(ply) or not IsValid(self) then return end
 
 			return true
 		end)
 
-		hook.Add("PrePlayerDraw", "__minigame_drink_" .. self:EntIndex(), function(ply)
+		hook.Add("PrePlayerDraw", EntTag, function(ply)
 			if not IsValid(ply) or not IsValid(self) then return end
 
 			return not self:IsPlyPlaying(ply)
 		end)
 	end
 
-	hook.Add("PlayerButtonUp", "__minigame_drink_" .. self:EntIndex(), function(ply, btn)
+	hook.Add("PlayerButtonUp", EntTag, function(ply, btn)
 		if not IsValid(ply) or not IsValid(self) then return end
 		if not self:GetNWBool("__can_select") or not self:IsPlyPlaying(ply) then return end
 		if btn ~= KEY_1 and btn ~= KEY_2 and btn ~= KEY_3 then return end
@@ -183,16 +201,19 @@ function ENT:AddHooks()
 	end)
 end
 
-function ENT:RemoveHooks()
+function ENT:RemoveHooks()	
+	local EntTag = Tag..'_' .. self:EntIndex()
+
 	if CLIENT then
-		hook.Remove("CalcView", "__minigame_drink_" .. self:EntIndex())
-		hook.Remove("ShouldDrawLocalPlayer", "__minigame_drink_" .. self:EntIndex())
-		hook.Remove("PrePlayerDraw", "__minigame_drink_" .. self:EntIndex())
+		hook.Remove("CalcView", EntTag)
+		hook.Remove("ShouldDrawLocalPlayer", EntTag)
+		hook.Remove("PrePlayerDraw", EntTag)
 	else
-		hook.Remove("PlayerDisconnected", "__minigame_drink_" .. self:EntIndex())
+		hook.Remove("PlayerDeath", EntTag)
+		hook.Remove("PlayerDisconnected", EntTag)
 	end
 
-	hook.Remove("PlayerButtonUp", "__minigame_drink_" .. self:EntIndex())
+	hook.Remove("PlayerButtonUp", EntTag)
 end
 
 function ENT:SolvePicks()
@@ -211,7 +232,7 @@ function ENT:SolvePicks()
 		local rndPly = table.Random(plys)
 		local rnd = math.random(1, 3)
 		rndPly:Puke(0.3) -- Random puke
-		self:PlaySound("hey_" .. rnd, "https://xss.failcake.me/minigames/drink/hey_" .. rnd .. ".ogg")
+		self:PlaySound("hey_" .. rnd, DRINKURL.."hey_" .. rnd .. ".ogg")
 	end
 
 	for k, v in pairs(self.REWARD_TABLE) do
@@ -225,15 +246,15 @@ end
 
 function ENT:PlaySoundEffect(ply, id)
 	if id == self.FLAG_DRINK then
-		self:PlaySound("gulp", "https://xss.failcake.me/minigames/drink/gulp.ogg", 0.7, false, ply)
-		self:DoAnimation(ply, "gesture_salute")
+		self:PlaySound("gulp", DRINKURL.."gulp.ogg", 0.7, false, ply)
+			self:DoAnimation(ply, "gesture_salute")
 		self:SetWeaponStatus(ply, false)
 	elseif id == self.FLAG_WATER then
-		self:PlaySound("water", "https://xss.failcake.me/minigames/drink/water.ogg", 0.9, false, ply)
+		self:PlaySound("water", DRINKURL.."water.ogg", 0.9, false, ply)
 		self:DoAnimation(ply, "gesture_salute")
 		self:SetWeaponStatus(ply, true)
 	elseif id == self.FLAG_BLUFF then
-		self:PlaySound("burps", "https://xss.failcake.me/minigames/drink/burps.ogg", 0.9, false, ply)
+		self:PlaySound("burps", DRINKURL.."burps.ogg", 0.9, false, ply)
 		self:DoAnimation(ply, "taunt_zombie")
 		self:SetWeaponStatus(ply, false)
 	end
@@ -241,8 +262,9 @@ end
 
 function ENT:PreparePlayer(id, restrict)
 	local ply = self:GetPlaying(id)
-	local Tag = "drinking_minigame"
 	if not IsValid(ply) then return end
+	ply:ExitVehicle()
+	local _ = not ply:Alive() and ply:Spawn()
 	ply:SetAllowNoclip(not restrict, Tag)
 	ply:SetAllowBuild(not restrict, Tag)
 	ply:RestrictFly(restrict, Tag)
@@ -283,6 +305,7 @@ end
 
 function ENT:SetPlaying(id, ply)
 	if id == nil then return end
+	if not ply:Reserve(Tag) then return end
 	self.__players[id] = ply -- Sync with CL?
 end
 
@@ -351,7 +374,8 @@ function ENT:Use(ply, caller)
 			end
 		end
 	end
-
+	if ply:IsReserved() then return end
+	
 	if not IsValid(ply_1) then
 		self:SetPlaying(1, ply)
 
@@ -399,7 +423,7 @@ function ENT:PlaySound(id, url, vol, loop, ent)
 	vol = vol or 0.8
 	loop = loop or false
 	ent = ent or self
-	net.Start("__minigame_drinking_snd")
+	net.Start("__minigame_drinking_snd",true)
 	net.WriteEntity(self)
 
 	net.WriteTable({id, url, loop, ent, vol})
@@ -422,7 +446,7 @@ function ENT:StartMinigame()
 	self:SetNWInt("__minigame_time", self.TOTAL_TIME)
 	self:SetNWInt("__pick_remain", 0)
 	self:SetNWBool("__can_select", false)
-	self:PlaySound("ambient", "https://xss.failcake.me/minigames/drink/minigame-theme.ogg")
+	self:PlaySound("ambient", DRINKURL.."minigame-theme.ogg")
 	self:AddHooks()
 
 	-- Start minigame
@@ -578,8 +602,8 @@ if CLIENT then
 		local loop = tblData[3]
 		local ent = tblData[4]
 		local volume = tblData[5]
-		if not IsValid(owner) then return end
-		if ent == nil or not IsValid(ent) then return end
+		if not owner:IsValid() then return end
+		if not ent:IsValid() then return end
 		if owner.__cached_sounds == nil then return end
 
 		if owner.__cached_sounds[id] ~= nil then
@@ -795,344 +819,17 @@ if CLIENT then
 end
 
 easylua.EndEntity()
-easylua.StartWeapon("cake_drinking_swep")
-SWEP.Author = "FailCake :D"
-SWEP.ViewModel = ""
-SWEP.WorldModel = Model("models/MaxOfS2D/camera.mdl")
-SWEP.PrintName = ""
-SWEP.AutoSwitchTo = true
-SWEP.AutoSwitchFrom = true
-SWEP.Primary.ClipSize = -1
-SWEP.Primary.DefaultClip = -1
-SWEP.Primary.Automatic = false
-SWEP.Primary.Ammo = "none"
-SWEP.Secondary.ClipSize = -1
-SWEP.Secondary.DefaultClip = -1
-SWEP.Secondary.Automatic = true
-SWEP.Secondary.Ammo = "none"
-SWEP.ShowViewModel = false
-SWEP.ShowWorldModel = false
 
-if CLIENT then
-	SWEP.DrawAmmo = false
-	SWEP.DrawCrosshair = false
-	SWEP.ViewModelFlip = false
-	SWEP.CSMuzzleFlashes = false
-	SWEP.Slot = 0
-	SWEP.SlotPos = 5
-end
 
-SWEP.WElements = {
-	["foam"] = {
-		type = "Model",
-		model = "models/dav0r/hoverball.mdl",
-		bone = "ValveBiped.Bip01_L_Hand",
-		rel = "cup",
-		pos = Vector(0, 0.879, 3),
-		angle = Angle(0, 0, 0),
-		size = Vector(0.36, 0.36, 0.1),
-		color = Color(255, 255, 255, 255),
-		surpresslightning = false,
-		material = "models/xqm/rails/gumball_1",
-		skin = 0,
-		bodygroup = {}
-	},
-	["beer"] = {
-		type = "Model",
-		model = "models/XQM/cylinderx1.mdl",
-		bone = "ValveBiped.Bip01_L_Hand",
-		rel = "cup",
-		pos = Vector(0, 0.899, -0.529),
-		angle = Angle(90, 90, 0),
-		size = Vector(0.56, 0.356, 0.356),
-		color = Color(255, 0, 190, 251),
-		surpresslightning = false,
-		material = "models/Effects/splodecard1_sheet",
-		skin = 0,
-		bodygroup = {}
-	},
-	["water"] = {
-		type = "Model",
-		model = "models/XQM/cylinderx1.mdl",
-		bone = "ValveBiped.Bip01_L_Hand",
-		rel = "cup",
-		pos = Vector(0, 0.899, -0.529),
-		angle = Angle(90, 90, 0),
-		size = Vector(0.56, 0.356, 0.356),
-		color = Color(0, 192, 255, 220),
-		surpresslightning = false,
-		material = "models/debug/debugwhite",
-		skin = 0,
-		bodygroup = {}
-	},
-	["beer_2"] = {
-		type = "Model",
-		model = "models/XQM/cylinderx1.mdl",
-		bone = "ValveBiped.Bip01_L_Hand",
-		rel = "cup",
-		pos = Vector(0, 0.899, -0.529),
-		angle = Angle(90, 90, 0),
-		size = Vector(0.56, 0.356, 0.356),
-		color = Color(255, 0, 190, 252),
-		surpresslightning = false,
-		material = "models/effects/muzzleflash/blurmuzzle",
-		skin = 0,
-		bodygroup = {}
-	},
-	["beer_3"] = {
-		type = "Model",
-		model = "models/XQM/cylinderx1.mdl",
-		bone = "ValveBiped.Bip01_L_Hand",
-		rel = "cup",
-		pos = Vector(0, 0.899, -0.529),
-		angle = Angle(90, 90, 0),
-		size = Vector(0.56, 0.346, 0.346),
-		color = Color(255, 0, 190, 128),
-		surpresslightning = false,
-		material = "models/props_combine/portalball001_sheet",
-		skin = 0,
-		bodygroup = {}
-	},
-	["cup"] = {
-		type = "Model",
-		model = "models/props_junk/garbage_coffeemug001a.mdl",
-		bone = "ValveBiped.Bip01_L_Hand",
-		rel = "",
-		pos = Vector(7.791, 1.557, 0.518),
-		angle = Angle(-26.883, 87.662, -8.183),
-		size = Vector(1, 1, 1.5),
-		color = Color(255, 255, 255, 254),
-		surpresslightning = false,
-		material = "models/props_combine/health_charger_glass",
-		skin = 0,
-		bodygroup = {}
-	}
-}
 
-function SWEP:Initialize()
-	self:SetHoldType("normal")
 
-	if CLIENT then
-		self.WElements = self:TableCopy(self.WElements)
-		self.__drinkingWater = false
-		self:CreateModels(self.WElements) -- create worldmodels
-	end
-end
-
-function SWEP:Holster(wep)
-	return true
-end
-
-function SWEP:ShouldDropOnDie()
-	return false
-end
-
--- Turn on / off
-function SWEP:PrimaryAttack()
-end
-
-function SWEP:Reload()
-end
-
-function SWEP:SecondaryAttack()
-end
-
-function SWEP:SetWater(water)
-	if SERVER then return end
-	self.__drinkingWater = water
-end
-
-if CLIENT then
-	SWEP.wRenderOrder = nil
-
-	function SWEP:DrawWorldModel()
-		if (self.ShowWorldModel == nil or self.ShowWorldModel) then
-			self:DrawModel()
-		end
-
-		if (not self.WElements) then return end
-
-		if (not self.wRenderOrder) then
-			self.wRenderOrder = {}
-
-			for k, v in pairs(self.WElements) do
-				if (v.type == "Model") then
-					table.insert(self.wRenderOrder, 1, k)
-				elseif (v.type == "Sprite" or v.type == "Quad") then
-					table.insert(self.wRenderOrder, k)
-				end
-			end
-		end
-
-		if (IsValid(self.Owner)) then
-			bone_ent = self.Owner
-		else
-			-- when the weapon is dropped
-			bone_ent = self
-		end
-
-		for k, name in pairs(self.wRenderOrder) do
-			local v = self.WElements[name]
-
-			if (not v) then
-				self.wRenderOrder = nil
-				break
-			end
-
-			if (v.hide) then continue end
-
-			if self.__drinkingWater then
-				if name ~= "water" and name ~= "cup" then continue end
-			else
-				if name == "water" then continue end
-			end
-
-			local pos, ang
-
-			if (v.bone) then
-				pos, ang = self:GetBoneOrientation(self.WElements, v, bone_ent)
-			else
-				pos, ang = self:GetBoneOrientation(self.WElements, v, bone_ent, "ValveBiped.Bip01_R_Hand")
-			end
-
-			if (not pos) then continue end
-			local model = v.modelEnt
-			local sprite = v.spriteMaterial
-
-			if (v.type == "Model" and IsValid(model)) then
-				model:SetPos(pos + ang:Forward() * v.pos.x + ang:Right() * v.pos.y + ang:Up() * v.pos.z)
-				ang:RotateAroundAxis(ang:Up(), v.angle.y)
-				ang:RotateAroundAxis(ang:Right(), v.angle.p)
-				ang:RotateAroundAxis(ang:Forward(), v.angle.r)
-				model:SetAngles(ang)
-				local matrix = Matrix()
-				matrix:Scale(v.size)
-				model:EnableMatrix("RenderMultiply", matrix)
-
-				if (v.material == "") then
-					model:SetMaterial("")
-				elseif (model:GetMaterial() ~= v.material) then
-					model:SetMaterial(v.material)
-				end
-
-				if (v.skin and v.skin ~= model:GetSkin()) then
-					model:SetSkin(v.skin)
-				end
-
-				if (v.bodygroup) then
-					for k, v in pairs(v.bodygroup) do
-						if (model:GetBodygroup(k) ~= v) then
-							model:SetBodygroup(k, v)
-						end
-					end
-				end
-
-				if (v.surpresslightning) then
-					render.SuppressEngineLighting(true)
-				end
-
-				local color = v.color
-				render.SetColorModulation(color.r / 255, color.g / 255, color.b / 255)
-				render.SetBlend(color.a / 255)
-				model:DrawModel()
-				render.SetBlend(1)
-				render.SetColorModulation(1, 1, 1)
-
-				if (v.surpresslightning) then
-					render.SuppressEngineLighting(false)
-				end
-			end
-		end
-	end
-
-	function SWEP:GetBoneOrientation(basetab, tab, ent, bone_override)
-		local bone, pos, ang
-
-		if (tab.rel and tab.rel ~= "") then
-			local v = basetab[tab.rel]
-			if (not v) then return end
-			-- Technically, if there exists an element with the same name as a bone
-			-- you can get in an infinite loop. Let's just hope nobody's that stupid.
-			pos, ang = self:GetBoneOrientation(basetab, v, ent)
-			if (not pos) then return end
-			pos = pos + ang:Forward() * v.pos.x + ang:Right() * v.pos.y + ang:Up() * v.pos.z
-			ang:RotateAroundAxis(ang:Up(), v.angle.y)
-			ang:RotateAroundAxis(ang:Right(), v.angle.p)
-			ang:RotateAroundAxis(ang:Forward(), v.angle.r)
-		else
-			bone = ent:LookupBone(bone_override or tab.bone)
-			if (not bone) then return end
-			pos, ang = Vector(0, 0, 0), Angle(0, 0, 0)
-			local m = ent:GetBoneMatrix(bone)
-
-			if (m) then
-				pos, ang = m:GetTranslation(), m:GetAngles()
-			end
-
-			if (IsValid(self.Owner) and self.Owner:IsPlayer() and ent == self.Owner:GetViewModel() and self.ViewModelFlip) then
-				ang.r = -ang.r -- Fixes mirrored models
-			end
-		end
-
-		return pos, ang
-	end
-
-	function SWEP:CreateModels(tab)
-		if (not tab) then return end
-
-		-- Create the clientside models here because Garry says we can't do it in the render hook
-		for k, v in pairs(tab) do
-			if (v.type == "Model" and v.model and v.model ~= "" and (not IsValid(v.modelEnt) or v.createdModel ~= v.model) and string.find(v.model, ".mdl") and file.Exists(v.model, "GAME")) then
-				v.modelEnt = ClientsideModel(v.model, RENDER_GROUP_VIEW_MODEL_OPAQUE)
-
-				if (IsValid(v.modelEnt)) then
-					v.modelEnt:SetPos(self:GetPos())
-					v.modelEnt:SetAngles(self:GetAngles())
-					v.modelEnt:SetParent(self)
-					v.modelEnt:SetNoDraw(true)
-					v.createdModel = v.model
-				else
-					v.modelEnt = nil
-				end
-			end
-		end
-	end
-
-	--[[*************************
-		Global utility code
-	*************************]]
-	-- Fully copies the table, meaning all tables inside this table are copied too and so on (normal table.Copy copies only their reference).
-	-- Does not copy entities of course, only copies their reference.
-	-- WARNING: do not use on tables that contain themselves somewhere down the line or you'll get an infinite loop
-	function SWEP:TableCopy(tab)
-		if (not tab) then return nil end
-		local res = {}
-
-		for k, v in pairs(tab) do
-			if (type(v) == "table") then
-				res[k] = self:TableCopy(v) -- recursion ho!
-			elseif (type(v) == "Vector") then
-				res[k] = Vector(v.x, v.y, v.z)
-			elseif (type(v) == "Angle") then
-				res[k] = Angle(v.p, v.y, v.r)
-			else
-				res[k] = v
-			end
-		end
-
-		return res
-	end
-end
-
-easylua.EndWeapon()
-
-if SERVER then
+if SERVER and false then
 	-- DEBUG STUFF
 	if CAW_DRINK_game ~= nil and IsValid(CAW_DRINK_game) then
 		CAW_DRINK_game:Remove()
 	end
 
-	CAW_DRINK_game = create("cake_drinking")
+	CAW_DRINK_game = create("drinking_minigame")
 	CAW_DRINK_game:SetPos(me:GetPos() + Vector(0, 0, 18))
 	CAW_DRINK_game:Spawn()
 end
