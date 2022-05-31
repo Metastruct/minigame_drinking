@@ -1,7 +1,18 @@
 local Tag = "minigame_drinking"
 local DRINKURL="https://metastruct.github.io/minigame_drinking/assets/"
 
+DEFINE_BASECLASS( "base_anim" )
+
+ENT.Category = "Fun + Games"
+
+ENT.Type			= "anim"
+ENT.Base			= "base_anim"
+ENT.Editable 		= false
+ENT.Spawnable 		= false
+ENT.AdminOnly 		= false
+
 ENT.PrintName = "Drinking game"
+ENT.Information = "Compete with other players on best drinking skills"
 ENT.Author = "FailCake"
 ENT.RenderGroup = RENDERGROUP_TRANSLUCENT
 ENT.FLAG_DRINK = 1
@@ -79,16 +90,19 @@ ENT.REWARD_TABLE = {
 }
 
 if SERVER then
+	AddCSLuaFile()
 	util.AddNetworkString("__minigame_drinking_snd")
 	util.AddNetworkString(Tag)
 	util.PrecacheModel("models/props_junk/glassjug01.mdl")
-end
+else
 
-ENT.UrlTex_drink_icon = surface.LazyURLImage(DRINKURL.."drink.png")
-ENT.UrlTex_water_icon = surface.LazyURLImage(DRINKURL.."water.png")
-ENT.UrlTex_belch_icon = surface.LazyURLImage(DRINKURL.."belch.png")
-ENT.UrlTex_tbbg = surface.LazyURLImage(DRINKURL.."table_bg.png")
-ENT.UrlTex_icon = surface.LazyURLImage(DRINKURL.."icon.png")
+	ENT.UrlTex_drink_icon = surface.LazyURLImage(DRINKURL.."drink.png")
+	ENT.UrlTex_water_icon = surface.LazyURLImage(DRINKURL.."water.png")
+	ENT.UrlTex_belch_icon = surface.LazyURLImage(DRINKURL.."belch.png")
+	ENT.UrlTex_tbbg = surface.LazyURLImage(DRINKURL.."table_bg.png")
+	ENT.UrlTex_icon = surface.LazyURLImage(DRINKURL.."icon.png")
+
+end
 	
 function ENT:Initialize()
 	self.__players = {} -- Reset
@@ -321,9 +335,10 @@ function ENT:GetPlaying(id)
 end
 
 function ENT:SetPlaying(id, ply)
-	if id == nil then return end
-	if not ply:Reserve(Tag) then return end
+	if id == nil then return false end
+	if ply and not ply:Reserve(Tag) then return false end
 	self.__players[id] = ply -- Sync with CL?
+	return true
 end
 
 function ENT:PrintMessage(msg)
@@ -383,7 +398,7 @@ function ENT:Use(ply, caller)
 			self:CancelMinigameStart()
 			self:EmitSound("buttons/combine_button3.wav")
 			ply:ChatPrint("[<color=232,83,174>Drinking Minigame<color=255,255,255>] No longer queued")
-
+			ply:UnReserve(Tag)
 			if ply == ply_1 then
 				return self:SetPlaying(1, nil)
 			elseif ply == ply_2 then
@@ -391,15 +406,21 @@ function ENT:Use(ply, caller)
 			end
 		end
 	end
-	if ply:IsReserved() then return end
+	local plyres = ply:IsReserved()
+	if plyres then 
+		ply:ChatPrint("Cannot enter, already playing game: "..tostring(plyres))
+		return
+	end
 	
 	if not IsValid(ply_1) then
-		self:SetPlaying(1, ply)
-
+		local ret = self:SetPlaying(1, ply)
+		if not ret then return end
+		
 		return self:CheckMinigameStart()
 	elseif not IsValid(ply_2) then
-		self:SetPlaying(2, ply)
-
+		local ret = self:SetPlaying(2, ply)
+		if not ret then return end
+		
 		return self:CheckMinigameStart()
 	else
 		ply:ChatPrint("[<color=232,83,174>Drinking Minigame<color=255,255,255>] Queue for minigame full, try again later")
