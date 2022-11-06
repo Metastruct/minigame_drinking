@@ -8,8 +8,8 @@ ENT.Category = "Fun + Games"
 ENT.Type			= "anim"
 ENT.Base			= "base_anim"
 ENT.Editable 		= false
-ENT.Spawnable 		= false
-ENT.AdminOnly 		= false
+ENT.Spawnable 		= true
+ENT.AdminOnly 		= true
 
 ENT.PrintName = "Drinking game"
 ENT.Information = "Compete with other players on best drinking skills"
@@ -121,6 +121,8 @@ function ENT:Initialize()
 	else
 		local mi, ma = self:OBBMins() * 1.5, self:OBBMaxs() * 15
 		self:SetRenderBounds(mi, ma)
+		
+		-- TODO: fix
 		self.bottle = ClientsideModel("models/props_junk/glassjug01.mdl", RENDERGROUP_TRANSLUCENT)
 		self.bottle:SetColor(Color(255, 255, 255, 254))
 		self.bottle:SetPos(self:GetPos() + Vector(0, 0, 25))
@@ -145,7 +147,6 @@ function ENT:Think()
 	if not IsValid(self.bottle) then return end
 	self.bottle:SetAngles(Angle(math.cos(CurTime() * 2) * 20, 0, 0))
 
-	self:SetNextClientThink(CurTime())
 	return true
 end
 
@@ -412,6 +413,18 @@ function ENT:Use(ply, caller)
 		return
 	end
 	
+	local plyres,reason = hook.Run("CanPlayMinigame",ply,"drinking",self)
+	if plyres == false then 
+		ply:ChatPrint("Cannot enter: "..tostring(reason))
+		return
+	end
+
+	local plyres,reason = hook.Run("CanPlayDrinkingGame",ply,self)
+	if plyres == false then 
+		ply:ChatPrint("Cannot enter: "..tostring(reason))
+		return
+	end
+
 	if not IsValid(ply_1) then
 		local ret = self:SetPlaying(1, ply)
 		if not ret then return end
@@ -629,7 +642,7 @@ if CLIENT then
 			local ply = net.ReadEntity()
 			local isWater = net.ReadBool()
 			local wep = ply:GetActiveWeapon()
-			if wep:GetClass() ~= "cake_drinking_swep" then return end
+			if not wep:IsValid() or wep:GetClass() ~= "cake_drinking_swep" then return end
 			wep:SetWater(isWater)
 		elseif cmd == "MINIGAME_END" then
 			-- Manual call
@@ -697,9 +710,12 @@ if CLIENT then
 	end
 
 	function ENT:Draw()
-		if not IsValid(LocalPlayer()) then return end
-		if self.UrlTex_icon == nil or self.UrlTex_tbbg == nil or self.UrlTex_drink_icon == nil or self.UrlTex_water_icon == nil or self.UrlTex_belch_icon == nil then return end
+		
 		self:DrawModel()
+		if EyePos():DistToSqr(self:GetPos())>1024*1024 then return end
+			
+		if self.UrlTex_icon == nil or self.UrlTex_tbbg == nil or self.UrlTex_drink_icon == nil or self.UrlTex_water_icon == nil or self.UrlTex_belch_icon == nil then return end
+		local ply = LocalPlayer()
 
 		if not self.__started then
 			-- INSTRUCTIONS
@@ -768,10 +784,9 @@ if CLIENT then
 		local players = self:GetPlaying()
 		if #players < 2 then return end
 		local canSelect = self:GetNWBool("__can_select")
-		local ply = LocalPlayer()
 		cam.Start3D2D(pos, ang, 0.2)
 
-		if self.icons ~= nil and self:IsPlyPlaying(LocalPlayer()) and canSelect then
+		if self.icons ~= nil and self:IsPlyPlaying(ply) and canSelect then
 			for i, v in pairs(self.icons) do
 				local wdrink, hdrink = nil
 
