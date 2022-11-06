@@ -512,12 +512,14 @@ function ENT:EndMinigame(no_winner)
 		winner = nil
 	end
 
-	if winner == nil or not IsValid(winner) then
-		self:PrintMessage("No one won!")
+	if not IsValid(winner) then
+		if self.__started then
+			self:PrintMessage("No one won!")
+		end
 	else
 		self:DoAnimation(winner, "taunt_cheer")
-		local nick_1, col_1, minnick_1 = _G.UndecorateNick(winner:GetNick())
-		self:BroadcastWinner(minnick_1)
+		local nick_1 = (winner:GetNick())
+		self:BroadcastWinner(nick_1)
 		self:EmitSound("metachievements/lightning_1.wav")
 	end
 
@@ -812,8 +814,8 @@ if CLIENT then
 		local total = drink1 + drink2
 		local perc_1, perc_2 = drink1 / total, drink2 / total
 		local w1, w2 = perc_1 * bwidth, perc_2 * bwidth
-		local nick_1, col_1, minnick_1 = _G.UndecorateNick(ply1:GetNick())
-		local nick_2, col_2, minnick_2 = _G.UndecorateNick(ply2:GetNick())
+		local minnick_1 = (ply1:GetNick())
+		local minnick_2 = (ply2:GetNick())
 
 		-- HUD -- Ply 1
 		if drink1 > 0 then
